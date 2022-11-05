@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -79,4 +81,48 @@ func (c *Client) fetchOverview() (model.Overview, error) {
 		return model.Overview{}, err
 	}
 	return data.Overview, nil
+}
+
+func (c *Client) FetchSales(month string) ([]model.SalesData, error) {
+	c.logger.Debugw("Fetching sales...", "month", month)
+	
+	salesUrl, err := c.getPublisherInfoUrl("sales")
+	if err != nil {
+		return nil, err
+	}
+
+	var rawSales model.RawSalesData
+	err = c.getJson(fmt.Sprintf("%s/%s.json", salesUrl, month), &rawSales)
+	if err != nil {
+		c.logger.Errorw("Failed to fetch sales", "error", err, "month", month)
+		return nil, err
+	}
+
+	return model.SalesFromRaw(rawSales), nil
+}
+
+func (c *Client) getPublisherInfoUrl(infoType string) (string, error) {
+	if c.publisherId == "" {
+		return "", errors.New("publisher id is not set")
+	}
+
+	const baseUrl = "https://publisher.assetstore.unity3d.com/api/publisher-info"
+	return fmt.Sprintf("%s/%s/%s", baseUrl, infoType, c.publisherId), nil
+}
+
+func (c *Client) getJson(url string, v interface{}) error {
+	res, err := c.httpClient.Get(url)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(body, v)
 }
