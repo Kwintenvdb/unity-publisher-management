@@ -20,7 +20,7 @@ func Start() {
 
 	app := fiber.New()
 	app.Post("/authenticate", server.authenticate)
-	app.Get("/sales", server.fetchSales)
+	app.Get("/sales/:month", server.fetchSales)
 
 	logger.Info("Starting server on port 8080")
 	app.Listen(":8080")
@@ -44,7 +44,8 @@ func (s *server) authenticate(c *fiber.Ctx) error {
 }
 
 func (s *server) fetchSales(c *fiber.Ctx) error {
-	sales, err := s.apiClient.FetchSales("202210")
+	month := c.Params("month")
+	sales, err := s.apiClient.FetchSales(month)
 	if err != nil {
 		return err
 	}
