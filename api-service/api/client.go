@@ -38,19 +38,18 @@ func NewClient(logger logger.Logger) *Client {
 }
 
 // Authenticate and cache the publisher id
-func (c *Client) Authenticate(email, password string) error {
+func (c *Client) Authenticate(email, password string) (string, error) {
 	err := auth.Authenticate(email, password, c.httpClient, c.logger)
 	if err != nil {
 		c.logger.Errorw("Failed to authenticate", "error", err)
-		return err
+		return "", err
 	}
 	id, err := c.fetchPublisherId()
 	if err != nil {
-		return err
+		return "", err
 	}
 	c.logger.Debugw("Fetched publisher id", "publisher_id", id)
-	c.publisherId = id
-	return nil
+	return id, nil
 }
 
 func (c *Client) Cookies() []*http.Cookie {
@@ -88,7 +87,7 @@ func (c *Client) fetchOverview() (model.Overview, error) {
 	return data.Overview, nil
 }
 
-func (c *Client) FetchSales(client *http.Client, publisher string, month string, token, session string) ([]model.SalesData, error) {
+func (c *Client) FetchSales(client *http.Client, publisher, month, token, session string) ([]model.SalesData, error) {
 	c.logger.Debugw("Fetching sales...", "month", month)
 	
 	salesUrl, err := c.getPublisherInfoUrl(publisher, "sales")

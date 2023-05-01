@@ -15,37 +15,48 @@ import (
 )
 
 type server struct {
-	apiClient *api.Client
-	logger    logger.Logger
+	logger logger.Logger
 }
 
 type user struct {
-	Email string
+	Email       string
+	PublisherId string
 }
 
 func Start() {
 	logger := logger.NewLogger()
 	server := server{
-		apiClient: api.NewClient(logger),
-		logger:    logger,
+		logger: logger,
 	}
 
 	r := gin.Default()
 
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
-		Realm:      "unity-publisher-management",
-		Key:        []byte("my temporary private secret key"),
-		Timeout:    time.Hour * 72, // 3 days
-		SendCookie: true,
+		Realm:       "unity-publisher-management",
+		Key:         []byte("my temporary private secret key"),
+		Timeout:     time.Hour * 72, // 3 days
+		SendCookie:  true,
 		TokenLookup: "header:Authorization,cookie:jwt",
 		Authenticator: func(c *gin.Context) (interface{}, error) {
-			email, err := server.authenticate(c)
+			email, publisher, err := server.authenticate(c)
 			if err != nil {
 				return nil, jwt.ErrFailedAuthentication
 			}
-			return &user{
-				Email: email,
-			}, nil
+			user := &user{
+				Email:       email,
+				PublisherId: publisher,
+			}
+			c.Set("user", user)
+			return user, nil
+		},
+		LoginResponse: func(c *gin.Context, code int, token string, expire time.Time) {
+			user := c.MustGet("user").(*user)
+			c.JSON(http.StatusOK, gin.H{
+				"email":       user.Email,
+				"publisherId": user.PublisherId,
+				"token":       token,
+				"expire":      expire.Format(time.RFC3339),
+			})
 		},
 	})
 
@@ -64,28 +75,30 @@ func Start() {
 	r.Run(":8081")
 }
 
-func (s *server) authenticate(c *gin.Context) (string, error) {
+func (s *server) authenticate(c *gin.Context) (string, string, error) {
 	email := c.PostForm("email")
 	password := c.PostForm("password")
 
 	if len(email) == 0 || len(password) == 0 {
 		c.String(http.StatusBadRequest, "Missing email or password")
-		return "", errors.New("Missing email or password")
+		return "", "", errors.New("missing email or password")
 	}
 
-	if err := s.apiClient.Authenticate(email, password); err != nil {
+	apiClient := api.NewClient(s.logger)
+	publisher, err := apiClient.Authenticate(email, password)
+	if err != nil {
 		c.String(http.StatusUnauthorized, "Failed to authenticate")
-		return "", err
+		return "", "", err
 	}
 
-	cookies := s.apiClient.Cookies()
+	cookies := apiClient.Cookies()
 	for _, cookie := range cookies {
 		s.logger.Debugw("Cookie", "name", cookie.Name, "value", cookie.Value)
 	}
 
 	c.SetCookie("kharma_token", cookies[1].Value, 0, "", "", false, true)
 	c.SetCookie("kharma_session", cookies[2].Value, 0, "", "", false, true)
-	return email, nil
+	return email, publisher, nil
 }
 
 type loggingTransport struct{}
@@ -117,7 +130,8 @@ func (s *server) fetchSales(c *gin.Context) {
 		Transport: &loggingTransport{},
 	}
 
-	sales, err := s.apiClient.FetchSales(&client, publisher, month, token, session)
+	apiClient := api.NewClient(s.logger)
+	sales, err := apiClient.FetchSales(&client, publisher, month, token, session)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to fetch sales")
 		return
