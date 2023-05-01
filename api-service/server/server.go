@@ -19,6 +19,10 @@ type server struct {
 	logger    logger.Logger
 }
 
+type user struct {
+	Email string
+}
+
 func Start() {
 	logger := logger.NewLogger()
 	server := server{
@@ -35,8 +39,13 @@ func Start() {
 		SendCookie: true,
 		TokenLookup: "header:Authorization,cookie:jwt",
 		Authenticator: func(c *gin.Context) (interface{}, error) {
-			err := server.authenticate(c)
-			return nil, err
+			email, err := server.authenticate(c)
+			if err != nil {
+				return nil, jwt.ErrFailedAuthentication
+			}
+			return &user{
+				Email: email,
+			}, nil
 		},
 	})
 
@@ -55,18 +64,18 @@ func Start() {
 	r.Run(":8081")
 }
 
-func (s *server) authenticate(c *gin.Context) error {
+func (s *server) authenticate(c *gin.Context) (string, error) {
 	email := c.PostForm("email")
 	password := c.PostForm("password")
 
 	if len(email) == 0 || len(password) == 0 {
 		c.String(http.StatusBadRequest, "Missing email or password")
-		return errors.New("Missing email or password")
+		return "", errors.New("Missing email or password")
 	}
 
 	if err := s.apiClient.Authenticate(email, password); err != nil {
 		c.String(http.StatusUnauthorized, "Failed to authenticate")
-		return err
+		return "", err
 	}
 
 	cookies := s.apiClient.Cookies()
@@ -76,8 +85,7 @@ func (s *server) authenticate(c *gin.Context) error {
 
 	c.SetCookie("kharma_token", cookies[1].Value, 0, "", "", false, true)
 	c.SetCookie("kharma_session", cookies[2].Value, 0, "", "", false, true)
-	c.String(http.StatusOK, "Authenticated successfully")
-	return nil
+	return email, nil
 }
 
 type loggingTransport struct{}
