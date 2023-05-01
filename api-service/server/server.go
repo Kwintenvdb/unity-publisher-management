@@ -3,12 +3,12 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httputil"
 
 	"github.com/Kwintenvdb/unity-publisher-management/api"
 	"github.com/Kwintenvdb/unity-publisher-management/logger"
-	"github.com/gofiber/fiber/v2"
+
+	"github.com/gin-gonic/gin"
 )
 
 type server struct {
@@ -23,26 +23,27 @@ func Start() {
 		logger:    logger,
 	}
 
-	app := fiber.New()
-	app.Post("/authenticate", server.authenticate)
-	app.Get("/sales/:publisher/:month", server.fetchSales)
+	r := gin.Default()
+
+	r.POST("/authenticate", server.authenticate)
+	r.GET("/sales/:publisher/:month", server.fetchSales)
 
 	logger.Info("Starting server on port 8081")
-	app.Listen(":8081")
+	r.Run(":8081")
 }
 
-func (s *server) authenticate(c *fiber.Ctx) error {
-	email := c.FormValue("email")
-	password := c.FormValue("password")
+func (s *server) authenticate(c *gin.Context) {
+	email := c.PostForm("email")
+	password := c.PostForm("password")
 
 	if len(email) == 0 || len(password) == 0 {
-		c.SendString("Missing email or password")
-		return c.SendStatus(http.StatusBadRequest)
+		c.String(http.StatusBadRequest, "Missing email or password")
+		return
 	}
 
 	if err := s.apiClient.Authenticate(email, password); err != nil {
-		c.SendString("Failed to authenticate")
-		return c.SendStatus(http.StatusUnauthorized)
+		c.String(http.StatusUnauthorized, "Failed to authenticate")
+		return
 	}
 
 	cookies := s.apiClient.Cookies()
@@ -50,17 +51,9 @@ func (s *server) authenticate(c *fiber.Ctx) error {
 		s.logger.Debugw("Cookie", "name", cookie.Name, "value", cookie.Value)
 	}
 
-	c.Cookie(&fiber.Cookie{
-		Name:  "kharma_token",
-		Value: cookies[1].Value,
-	})
-
-	c.Cookie(&fiber.Cookie{
-		Name:  "kharma_session",
-		Value: cookies[2].Value,
-	})
-
-	return c.SendString("Authenticated successfully")
+	c.SetCookie("kharma_token", cookies[1].Value, 0, "", "", false, true)
+	c.SetCookie("kharma_session", cookies[2].Value, 0, "", "", false, true)
+	c.String(http.StatusOK, "Authenticated successfully")
 }
 
 type loggingTransport struct{}
@@ -79,29 +72,23 @@ func (s *loggingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return resp, err
 }
 
-func (s *server) fetchSales(c *fiber.Ctx) error {
-	token := c.Cookies("kharma_token")
-	session := c.Cookies("kharma_session")
+func (s *server) fetchSales(c *gin.Context) {
+	token, _ := c.Cookie("kharma_token")
+	session, _ := c.Cookie("kharma_session")
 
 	s.logger.Debugw("Cookies", "token", token, "session", session)
 
-	publisher := c.Params("publisher")
-	month := c.Params("month")
-
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		panic(err)
-	}
-
+	publisher := c.Param("publisher")
+	month := c.Param("month")
 
 	client := http.Client{
-		Jar: jar,
 		Transport: &loggingTransport{},
 	}
 
 	sales, err := s.apiClient.FetchSales(&client, publisher, month, token, session)
 	if err != nil {
-		return err
+		c.String(http.StatusInternalServerError, "Failed to fetch sales")
+		return
 	}
-	return c.JSON(sales)
+	c.JSON(http.StatusOK, sales)
 }
