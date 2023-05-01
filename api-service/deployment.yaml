@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upm-api-deployment
+  labels:
+    app: upm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: upm-api
+  template:
+    metadata:
+      labels:
+        app: upm-api
+    spec:
+      containers:
+        - name: ag
+          image: upm-api
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: upm
+  name: ag-service
+  namespace: default
+  resourceVersion: "3499"
+  uid: 44239602-50db-4057-9f51-9a1dde1271ef
+spec:
+  type: NodePort
+  ports:
+    - port: 8888
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: upm-ag

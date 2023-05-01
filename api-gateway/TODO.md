@@ -1,0 +1,1 @@
+Use an Ingress controller? 
