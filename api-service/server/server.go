@@ -1,13 +1,16 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"time"
 
 	"github.com/Kwintenvdb/unity-publisher-management/api"
 	"github.com/Kwintenvdb/unity-publisher-management/logger"
 
+	jwt "github.com/appleboy/gin-jwt/v2"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,25 +28,45 @@ func Start() {
 
 	r := gin.Default()
 
-	r.POST("/authenticate", server.authenticate)
-	r.GET("/sales/:publisher/:month", server.fetchSales)
+	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
+		Realm:      "unity-publisher-management",
+		Key:        []byte("my temporary private secret key"),
+		Timeout:    time.Hour * 72, // 3 days
+		SendCookie: true,
+		TokenLookup: "header:Authorization,cookie:jwt",
+		Authenticator: func(c *gin.Context) (interface{}, error) {
+			err := server.authenticate(c)
+			return nil, err
+		},
+	})
+
+	if err != nil {
+		logger.Fatalw("Failed to create auth middleware", "error", err)
+	}
+
+	r.POST("/authenticate", authMiddleware.LoginHandler)
+
+	auth := r.Group("/api")
+	auth.Use(authMiddleware.MiddlewareFunc())
+
+	auth.GET("/sales/:publisher/:month", server.fetchSales)
 
 	logger.Info("Starting server on port 8081")
 	r.Run(":8081")
 }
 
-func (s *server) authenticate(c *gin.Context) {
+func (s *server) authenticate(c *gin.Context) error {
 	email := c.PostForm("email")
 	password := c.PostForm("password")
 
 	if len(email) == 0 || len(password) == 0 {
 		c.String(http.StatusBadRequest, "Missing email or password")
-		return
+		return errors.New("Missing email or password")
 	}
 
 	if err := s.apiClient.Authenticate(email, password); err != nil {
 		c.String(http.StatusUnauthorized, "Failed to authenticate")
-		return
+		return err
 	}
 
 	cookies := s.apiClient.Cookies()
@@ -54,6 +77,7 @@ func (s *server) authenticate(c *gin.Context) {
 	c.SetCookie("kharma_token", cookies[1].Value, 0, "", "", false, true)
 	c.SetCookie("kharma_session", cookies[2].Value, 0, "", "", false, true)
 	c.String(http.StatusOK, "Authenticated successfully")
+	return nil
 }
 
 type loggingTransport struct{}
