@@ -70,6 +70,7 @@ func Start() {
 	auth.Use(authMiddleware.MiddlewareFunc())
 
 	auth.GET("/sales/:publisher/:month", server.fetchSales)
+	auth.GET("/packages", server.fetchPackages)
 
 	logger.Info("Starting server on port 8081")
 	r.Run(":8081")
@@ -97,10 +98,11 @@ func (s *server) authenticate(c *gin.Context) (string, string, error) {
 }
 
 func (s *server) fetchSales(c *gin.Context) {
-	token, _ := c.Cookie("kharma_token")
-	session, _ := c.Cookie("kharma_session")
-
-	s.logger.Debugw("Cookies", "token", token, "session", session)
+	token, session, err := getSessionData(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, "Failed to authenticate")
+		return
+	}
 
 	publisher := c.Param("publisher")
 	month := c.Param("month")
@@ -112,4 +114,32 @@ func (s *server) fetchSales(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, sales)
+}
+
+func (s *server) fetchPackages(c *gin.Context) {
+	token, session, err := getSessionData(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, "Failed to authenticate")
+		return
+	}
+
+	apiClient := api.NewClient(s.logger)
+	packages, err := apiClient.FetchPackages(token, session)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to fetch packages")
+		return
+	}
+	c.JSON(http.StatusOK, packages)
+}
+
+func getSessionData(c *gin.Context) (string, string, error) {
+	token, err := c.Cookie("kharma_token")
+	if err != nil {
+		return "", "", err
+	}
+	session, err := c.Cookie("kharma_session")
+	if err != nil {
+		return "", "", err
+	}
+	return token, session, nil
 }

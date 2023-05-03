@@ -129,6 +129,20 @@ func (c *Client) FetchSales(publisher, month, token, session string) ([]model.Sa
 	return model.SalesFromRaw(rawSales), nil
 }
 
+func (c *Client) FetchPackages(token, session string) ([]model.PackageData, error) {
+	const url = "https://publisher.assetstore.unity3d.com/api/management/packages.json"
+
+	var packages struct {
+		Packages []model.PackageData `json:"packages"`
+	}
+	err := c.getJson(url, &packages, token, session)
+	if err != nil {
+		c.logger.Errorw("Failed to fetch packages", "error", err)
+		return nil, err
+	}
+	return packages.Packages, nil
+}
+
 func (c *Client) getPublisherInfoUrl(publisher string, infoType string) (string, error) {
 	if publisher == "" {
 		return "", errors.New("publisher id is not set")
