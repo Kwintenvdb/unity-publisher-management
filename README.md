@@ -15,10 +15,16 @@ Next requests:
 2. For each API requests, the API service checks the cache first
 3. API service forwards requests to Unity API on cache miss and populates the cache
 
+If the Unity API returns a 401, invalidate the JWT somehow (clear the cookie).
+Additionally send out a message which the scheduler may react to (stop caching).
+
 Scheduler:
 1. When user is first created, a message is sent to the scheduler
 2. The scheduler periodically sends a request to the API service to fetch ALL sales data of all months
 3. The scheduler then populates the cache with the data
+
+The scheduler receives the JWT from the API service.
+When the JWT expires, or any Unity API returns a 401, the scheduler stops fetching data for that particular publisher.
 
 Cache:
 1. Stores all sales data per month by publisher id
