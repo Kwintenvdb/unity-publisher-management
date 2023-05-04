@@ -54,6 +54,22 @@ func Start() {
 		},
 		LoginResponse: func(c *gin.Context, code int, token string, expire time.Time) {
 			user := c.MustGet("user").(*user)
+
+			kharmaToken, _ := c.Cookie("kharma_token")
+			kharmaSession, _ := c.Cookie("kharma_session")
+
+			// Inform the scheduling service
+			schedulingPayload := fmt.Sprintf(`{
+				"publisher": "%s",
+				"kharmaSession": "%s",
+				"kharmaToken": "%s",
+				"jwt": "%s"
+			}`, user.PublisherId, kharmaSession, kharmaToken, token)
+			_, err := http.Post("http://localhost:8083/schedule", "application/json", bytes.NewReader([]byte(schedulingPayload)))
+			if err != nil {
+				logger.Warnw("Failed to schedule sales fetching", "error", err)
+			}
+
 			c.JSON(http.StatusOK, gin.H{
 				"email":       user.Email,
 				"publisherId": user.PublisherId,
@@ -73,6 +89,7 @@ func Start() {
 	auth.Use(authMiddleware.MiddlewareFunc())
 
 	auth.GET("/sales/:publisher/:month", server.fetchSales)
+	auth.GET("/months/:publisher", server.fetchMonths)
 	auth.GET("/packages", server.fetchPackages)
 
 	logger.Info("Starting server on port 8081")
@@ -97,6 +114,7 @@ func (s *server) authenticate(c *gin.Context) (string, string, error) {
 
 	c.SetCookie("kharma_token", authResponse.KharmaToken, 0, "", "", false, true)
 	c.SetCookie("kharma_session", authResponse.KharmaSession, 0, "", "", false, true)
+
 	return email, authResponse.PublisherId, nil
 }
 
@@ -136,6 +154,24 @@ func (s *server) fetchSales(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, sales)
+}
+
+func (s *server) fetchMonths(c *gin.Context) {
+	token, session, err := getSessionData(c)
+	if err != nil {
+		c.String(http.StatusUnauthorized, "Failed to authenticate")
+		return
+	}
+
+	publisher := c.Param("publisher")
+
+	apiClient := api.NewClient(s.logger)
+	months, err := apiClient.FetchMonths(publisher, token, session)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "Failed to fetch months")
+		return
+	}
+	c.JSON(http.StatusOK, months)
 }
 
 func (s *server) fetchPackages(c *gin.Context) {

@@ -129,6 +129,25 @@ func (c *Client) FetchSales(publisher, month, token, session string) ([]model.Sa
 	return model.SalesFromRaw(rawSales), nil
 }
 
+func (c *Client) FetchMonths(publisher, token, session string) ([]model.MonthData, error) {
+	c.logger.Debug("Fetching months...")
+
+	monthsUrl, err := c.getPublisherInfoUrl(publisher, "months")
+	if err != nil {
+		return nil, err
+	}
+
+	var months struct {
+		Months []model.MonthData `json:"periods"`
+	}
+	err = c.getJson(fmt.Sprintf("%s/%s.json", monthsUrl, publisher), &months, token, session)
+	if err != nil {
+		c.logger.Errorw("Failed to fetch months", "error", err)
+		return nil, err
+	}
+	return months.Months, nil
+}
+
 func (c *Client) FetchPackages(token, session string) ([]model.PackageData, error) {
 	const url = "https://publisher.assetstore.unity3d.com/api/management/packages.json"
 
