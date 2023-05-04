@@ -2,7 +2,7 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
+	// "encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -128,15 +128,20 @@ func (s *server) fetchSales(c *gin.Context) {
 	publisher := c.Param("publisher")
 	month := c.Param("month")
 
-	cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
-	res, err := http.Get(cacheUrl)
-	if err == nil && res.StatusCode == http.StatusOK {
-		s.logger.Debug("Retrieved sales from cache")
-		c.DataFromReader(http.StatusOK, res.ContentLength, "application/json", res.Body, nil)
-		return
-	} else {
-		s.logger.Debug("Sales not found in cache")
-	}
+	// TODO the API service should not check the cache, because the API service is
+	// used to populate the cache...
+	// Instead, the API gateway could check the cache before making a request to the API service.
+	// It is probably still fine for the API service to populate the cache, though likely unnecessary.
+
+	// cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
+	// res, err := http.Get(cacheUrl)
+	// if err == nil && res.StatusCode == http.StatusOK {
+	// 	s.logger.Debug("Retrieved sales from cache")
+	// 	c.DataFromReader(http.StatusOK, res.ContentLength, "application/json", res.Body, nil)
+	// 	return
+	// } else {
+	// 	s.logger.Debug("Sales not found in cache")
+	// }
 
 	apiClient := api.NewClient(s.logger)
 	sales, err := apiClient.FetchSales(publisher, month, token, session)
@@ -146,12 +151,12 @@ func (s *server) fetchSales(c *gin.Context) {
 	}
 
 	// Cache the sales
-	s.logger.Debug("Sales retrieved. Caching sales...")
-	salesData, _ := json.Marshal(sales)
-	_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
-	if err != nil {
-		s.logger.Warnw("Failed to cache sales", "error", err)
-	}
+	// s.logger.Debug("Sales retrieved. Caching sales...")
+	// salesData, _ := json.Marshal(sales)
+	// _, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
+	// if err != nil {
+	// 	s.logger.Warnw("Failed to cache sales", "error", err)
+	// }
 
 	c.JSON(http.StatusOK, sales)
 }

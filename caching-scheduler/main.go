@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,7 +20,7 @@ type schedulingJob struct {
 func main() {
 	scheduledJobs := map[string]schedulingJob{}
 
-	gocron.Every(10).Seconds().Do(func() {
+	gocron.Every(15).Seconds().Do(func() {
 		println("Scheduled task running...")
 		println("Nr of scheduled jobs: ", len(scheduledJobs))
 
@@ -68,21 +69,9 @@ func fetchData(job schedulingJob) {
 	// Fetch months
 	println("Fetching months...")
 
-	req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:8081/api/months/%s", job.Publisher), nil)
-	req.AddCookie(&http.Cookie{
-		Name:  "kharma_token",
-		Value: job.KharmaToken,
-	})
-	req.AddCookie(&http.Cookie{
-		Name:  "kharma_session",
-		Value: job.KharmaSession,
-	})
-	req.AddCookie(&http.Cookie{
-		Name:  "jwt",
-		Value: job.JWT,
-	})
-
 	client := http.Client{}
+
+	req := createRequest(fmt.Sprintf("http://localhost:8081/api/months/%s", job.Publisher), job)
 	res, err := client.Do(req)
 	if err != nil {
 		println("Failed to fetch months")
@@ -100,34 +89,50 @@ func fetchData(job schedulingJob) {
 	println("Fetching sales...")
 	for _, month := range months {
 		// TODO parallelize this and extract duplicate code
-		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:8081/api/sales/%s/%s", job.Publisher, month.Value), nil)
-		req.AddCookie(&http.Cookie{
-			Name:  "kharma_token",
-			Value: job.KharmaToken,
-		})
-		req.AddCookie(&http.Cookie{
-			Name:  "kharma_session",
-			Value: job.KharmaSession,
-		})
-		req.AddCookie(&http.Cookie{
-			Name:  "jwt",
-			Value: job.JWT,
-		})
+		go func() {
+			req := createRequest(fmt.Sprintf("http://localhost:8081/api/sales/%s/%s", job.Publisher, month.Value), job)
+			res, err := client.Do(req)
+			if err != nil {
+				println("Failed to fetch sales")
+				return
+			}
 
-		client := http.Client{}
-		res, err := client.Do(req)
-		if err != nil {
-			println("Failed to fetch sales")
-			return
-		}
+			var sales []SalesData
+			err = json.NewDecoder(res.Body).Decode(&sales)
+			if err != nil {
+				println("Failed to parse sales")
+				return
+			}
 
-		var sales []SalesData
-		err = json.NewDecoder(res.Body).Decode(&sales)
-		if err != nil {
-			println("Failed to parse sales")
-			return
-		}
+			println("Sales for month ", month.Value, ": ", sales)
 
-		println("Sales for month ", month.Value, ": ", sales)
+			// Cache the sales
+			println("Caching sales...")
+
+			cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", job.Publisher, month)
+
+			salesData, _ := json.Marshal(sales)
+			_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
+			if err != nil {
+				println("Failed to cache sales")
+			}
+		}()
 	}
+}
+
+func createRequest(url string, job schedulingJob) *http.Request {
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.AddCookie(&http.Cookie{
+		Name:  "kharma_token",
+		Value: job.KharmaToken,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  "kharma_session",
+		Value: job.KharmaSession,
+	})
+	req.AddCookie(&http.Cookie{
+		Name:  "jwt",
+		Value: job.JWT,
+	})
+	return req
 }
