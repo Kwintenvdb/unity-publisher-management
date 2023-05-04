@@ -13,18 +13,6 @@ func main() {
 	r := gin.Default()
 
 	salesCache := make(salesByPublisher)
-	salesCache["18076"] = salesByMonth{
-		"202303": `
-		[
-			{
-				"package_name": "foobar",
-				"price": "$ 9.99",
-				"sales": 99,
-				"gross": "$ 999.99",
-				"last_sale": "2023-10-10"
-			}
-		]`,
-	}
 
 	r.GET("/sales/:publisher/:month", func(c *gin.Context) {
 		publisher := c.Param("publisher")

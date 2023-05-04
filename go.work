@@ -2,4 +2,5 @@ go 1.20
 
 use ./api-gateway
 use ./api-service
+use ./caching-scheduler
 use ./caching-service
