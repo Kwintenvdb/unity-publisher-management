@@ -1,4 +1,4 @@
-module github.com/Kwintenvdb/unity-publisher-management/caching-service
+module github.com/Kwintenvdb/unity-publisher-management/api-gateway
 
 go 1.18
 

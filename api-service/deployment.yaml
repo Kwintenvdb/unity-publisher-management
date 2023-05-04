@@ -31,7 +31,7 @@ metadata:
   resourceVersion: "3499"
   uid: 44239602-50db-4057-9f51-9a1dde1271ef
 spec:
-  type: NodePort
+  type: ClusterIP
   ports:
     - port: 8888
       protocol: TCP

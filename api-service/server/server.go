@@ -1,7 +1,10 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -107,12 +110,31 @@ func (s *server) fetchSales(c *gin.Context) {
 	publisher := c.Param("publisher")
 	month := c.Param("month")
 
+	cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
+	res, err := http.Get(cacheUrl)
+	if err == nil && res.StatusCode == http.StatusOK {
+		s.logger.Debug("Retrieved sales from cache")
+		c.DataFromReader(http.StatusOK, res.ContentLength, "application/json", res.Body, nil)
+		return
+	} else {
+		s.logger.Debug("Sales not found in cache")
+	}
+
 	apiClient := api.NewClient(s.logger)
 	sales, err := apiClient.FetchSales(publisher, month, token, session)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to fetch sales")
 		return
 	}
+
+	// Cache the sales
+	s.logger.Debug("Sales retrieved. Caching sales...")
+	salesData, _ := json.Marshal(sales)
+	_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
+	if err != nil {
+		s.logger.Warnw("Failed to cache sales", "error", err)
+	}
+
 	c.JSON(http.StatusOK, sales)
 }
 
