@@ -56,6 +56,14 @@ type MonthData struct {
 	Name  string `json:"name"`
 }
 
+type SalesData struct {
+	PackageName string `json:"package_name"`
+	Price       string `json:"price"`
+	Sales       int    `json:"sales"`
+	Gross       string `json:"gross"`
+	LastSale    string `json:"last_sale"`
+}
+
 func fetchData(job schedulingJob) {
 	// Fetch months
 	println("Fetching months...")
@@ -86,5 +94,40 @@ func fetchData(job schedulingJob) {
 	if err != nil {
 		println("Failed to parse months")
 		return
+	}
+
+	// Fetch sales
+	println("Fetching sales...")
+	for _, month := range months {
+		// TODO parallelize this and extract duplicate code
+		req, _ := http.NewRequest(http.MethodGet, fmt.Sprintf("http://localhost:8081/api/sales/%s/%s", job.Publisher, month.Value), nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "kharma_token",
+			Value: job.KharmaToken,
+		})
+		req.AddCookie(&http.Cookie{
+			Name:  "kharma_session",
+			Value: job.KharmaSession,
+		})
+		req.AddCookie(&http.Cookie{
+			Name:  "jwt",
+			Value: job.JWT,
+		})
+
+		client := http.Client{}
+		res, err := client.Do(req)
+		if err != nil {
+			println("Failed to fetch sales")
+			return
+		}
+
+		var sales []SalesData
+		err = json.NewDecoder(res.Body).Decode(&sales)
+		if err != nil {
+			println("Failed to parse sales")
+			return
+		}
+
+		println("Sales for month ", month.Value, ": ", sales)
 	}
 }
