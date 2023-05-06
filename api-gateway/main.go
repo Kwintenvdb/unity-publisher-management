@@ -62,7 +62,7 @@ func createApiServiceUrl(path string) string {
 }
 
 func getApiServiceHost() string {
-	if host, found := os.LookupEnv("UPM_API_SERVICE_HOST"); found {
+	if host, found := os.LookupEnv("UPM_API_SERVICE"); found {
 		return host
 	}
 	return "localhost:8081"

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -70,7 +71,6 @@ type SalesData struct {
 }
 
 func fetchData(job schedulingJob) {
-	// Fetch months
 	println("Fetching months...")
 
 	client := http.Client{}
@@ -98,7 +98,7 @@ func fetchData(job schedulingJob) {
 
 // TODO extract some duplicate code
 func fetchAndCacheSales(job schedulingJob, month MonthData, client *http.Client) {
-	req := createRequest(fmt.Sprintf("http://localhost:8081/api/sales/%s/%s", job.Publisher, month.Value), job)
+	req := createRequest(fmt.Sprintf("http://%s/api/sales/%s/%s", getApiServiceHost(), job.Publisher, month.Value), job)
 	res, err := client.Do(req)
 	if err != nil {
 		println("Failed to fetch sales")
@@ -112,12 +112,12 @@ func fetchAndCacheSales(job schedulingJob, month MonthData, client *http.Client)
 		return
 	}
 
-	println("Sales for month ", month.Value, ": ", sales)
+	println("Fetched sales for month", month.Value)
 
 	// Cache the sales
 	println("Caching sales...")
 
-	cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", job.Publisher, month.Value)
+	cacheUrl := fmt.Sprintf("http://%s/sales/%s/%s", getCachingServiceHost(),job.Publisher, month.Value)
 
 	salesData, _ := json.Marshal(sales)
 	_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
@@ -141,4 +141,18 @@ func createRequest(url string, job schedulingJob) *http.Request {
 		Value: job.JWT,
 	})
 	return req
+}
+
+func getApiServiceHost() string {
+	if host, found := os.LookupEnv("UPM_API_SERVICE"); found {
+		return host
+	}
+	return "localhost:8081"
+}
+
+func getCachingServiceHost() string {
+	if host, found := os.LookupEnv("UPM_CACHING_SERVICE"); found {
+		return host
+	}
+	return "localhost:8082"
 }
