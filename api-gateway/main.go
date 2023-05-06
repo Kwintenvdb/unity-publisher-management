@@ -27,7 +27,7 @@ func main() {
 
 		println("Fetching sales for", publisher, "in", month, "...")
 
-		// TODO check the caching service first, then forward to API service if not found
+		// Check the caching service first, then forward to API service if not found
 		cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
 		res, err := http.Get(cacheUrl)
 		if err != nil {
@@ -39,14 +39,12 @@ func main() {
 			defer res.Body.Close()
 			body, _ := io.ReadAll(res.Body)
 			return c.SendString(string(body))
-			// c.DataFromReader(http.StatusOK, res.ContentLength, "application/json", res.Body, nil)
-			// return nil
 		}
 
+		println("Sales not found in cache, fetching from API service...")
 		path := c.Path()
 		url := createApiServiceUrl(path)
 		return proxy.Do(c, url)
-		// return nil
 	})
 
 	app.All("/api/*", func(c *fiber.Ctx) error {

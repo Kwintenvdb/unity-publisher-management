@@ -13,6 +13,7 @@ type salesByPublisher = map[string]salesByMonth
 func main() {
 	r := gin.Default()
 
+	// TODO make cache persistent
 	mutex := &sync.RWMutex{}
 	salesCache := make(salesByPublisher)
 
@@ -37,6 +38,7 @@ func main() {
 		month := c.Param("month")
 
 		body := c.Request.Body
+		defer body.Close()
 		data, err := io.ReadAll(body)
 		if err != nil {
 			c.String(400, "Failed to read sales")
