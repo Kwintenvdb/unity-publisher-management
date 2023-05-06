@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	// "encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -55,20 +54,7 @@ func Start() {
 		LoginResponse: func(c *gin.Context, code int, token string, expire time.Time) {
 			user := c.MustGet("user").(*user)
 
-			kharmaToken, _ := c.Cookie("kharma_token")
-			kharmaSession, _ := c.Cookie("kharma_session")
-
-			// Inform the scheduling service
-			schedulingPayload := fmt.Sprintf(`{
-				"publisher": "%s",
-				"kharmaSession": "%s",
-				"kharmaToken": "%s",
-				"jwt": "%s"
-			}`, user.PublisherId, kharmaSession, kharmaToken, token)
-			_, err := http.Post("http://localhost:8083/schedule", "application/json", bytes.NewReader([]byte(schedulingPayload)))
-			if err != nil {
-				logger.Warnw("Failed to schedule sales fetching", "error", err)
-			}
+			scheduleSalesCaching(c, user, token, logger)
 
 			c.JSON(http.StatusOK, gin.H{
 				"email":       user.Email,
@@ -94,6 +80,22 @@ func Start() {
 
 	logger.Info("Starting server on port 8081")
 	r.Run(":8081")
+}
+
+func scheduleSalesCaching(c *gin.Context, user *user, token string, logger logger.Logger) {
+	kharmaToken, _ := c.Cookie("kharma_token")
+	kharmaSession, _ := c.Cookie("kharma_session")
+
+	schedulingPayload := fmt.Sprintf(`{
+				"publisher": "%s",
+				"kharmaSession": "%s",
+				"kharmaToken": "%s",
+				"jwt": "%s"
+			}`, user.PublisherId, kharmaSession, kharmaToken, token)
+	_, err := http.Post("http://localhost:8083/schedule", "application/json", bytes.NewReader([]byte(schedulingPayload)))
+	if err != nil {
+		logger.Errorw("Failed to schedule sales fetching", "error", err)
+	}
 }
 
 func (s *server) authenticate(c *gin.Context) (string, string, error) {

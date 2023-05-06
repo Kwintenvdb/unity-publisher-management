@@ -9,6 +9,12 @@
             "type": "go",
             "request": "launch",
             "program": "${workspaceFolder}/api-service/main.go",
-        }
+        },
+        {
+            "name": "Launch caching-service",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/caching-service/main.go",
+        },
     ]
 }

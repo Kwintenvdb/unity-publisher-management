@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jasonlvhit/gocron"
+	"github.com/go-co-op/gocron"
 )
 
 type schedulingJob struct {
@@ -20,7 +21,8 @@ type schedulingJob struct {
 func main() {
 	scheduledJobs := map[string]schedulingJob{}
 
-	gocron.Every(15).Seconds().Do(func() {
+	scheduler := gocron.NewScheduler(time.UTC)
+	scheduler.Every(30).Seconds().Do(func() {
 		println("Scheduled task running...")
 		println("Nr of scheduled jobs: ", len(scheduledJobs))
 
@@ -28,11 +30,7 @@ func main() {
 			fetchData(job)
 		}
 	})
-
-	go func() {
-		<-gocron.Start()
-	}()
-
+	
 	// TODO for now the scheduler is invoked directly via HTTP.
 	// In the future we will extract this to work via a message queue.
 	r := gin.Default()
@@ -46,6 +44,12 @@ func main() {
 		}
 
 		scheduledJobs[job.Publisher] = job
+		if len(scheduledJobs) == 1 {
+			// Won't start if already started
+			scheduler.StartAsync()
+			scheduler.RunAll()
+		}
+
 		c.String(200, "Job scheduled")
 	})
 
@@ -88,35 +92,37 @@ func fetchData(job schedulingJob) {
 	// Fetch sales
 	println("Fetching sales...")
 	for _, month := range months {
-		// TODO parallelize this and extract duplicate code
-		go func() {
-			req := createRequest(fmt.Sprintf("http://localhost:8081/api/sales/%s/%s", job.Publisher, month.Value), job)
-			res, err := client.Do(req)
-			if err != nil {
-				println("Failed to fetch sales")
-				return
-			}
+		go fetchAndCacheSales(job, month, &client)
+	}
+}
 
-			var sales []SalesData
-			err = json.NewDecoder(res.Body).Decode(&sales)
-			if err != nil {
-				println("Failed to parse sales")
-				return
-			}
+// TODO extract some duplicate code
+func fetchAndCacheSales(job schedulingJob, month MonthData, client *http.Client) {
+	req := createRequest(fmt.Sprintf("http://localhost:8081/api/sales/%s/%s", job.Publisher, month.Value), job)
+	res, err := client.Do(req)
+	if err != nil {
+		println("Failed to fetch sales")
+		return
+	}
 
-			println("Sales for month ", month.Value, ": ", sales)
+	var sales []SalesData
+	err = json.NewDecoder(res.Body).Decode(&sales)
+	if err != nil {
+		println("Failed to parse sales")
+		return
+	}
 
-			// Cache the sales
-			println("Caching sales...")
+	println("Sales for month ", month.Value, ": ", sales)
 
-			cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", job.Publisher, month)
+	// Cache the sales
+	println("Caching sales...")
 
-			salesData, _ := json.Marshal(sales)
-			_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
-			if err != nil {
-				println("Failed to cache sales")
-			}
-		}()
+	cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", job.Publisher, month.Value)
+
+	salesData, _ := json.Marshal(sales)
+	_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
+	if err != nil {
+		println("Failed to cache sales")
 	}
 }
 
