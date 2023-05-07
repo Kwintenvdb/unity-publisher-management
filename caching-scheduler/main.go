@@ -2,14 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	// "github.com/gin-gonic/gin"
 	"github.com/go-co-op/gocron"
+	kafka "github.com/segmentio/kafka-go"
 )
 
 type schedulingJob struct {
@@ -31,18 +33,31 @@ func main() {
 			fetchData(job)
 		}
 	})
-	
-	// TODO for now the scheduler is invoked directly via HTTP.
-	// In the future we will extract this to work via a message queue.
-	r := gin.Default()
 
-	r.POST("/schedule", func(c *gin.Context) {
-		var job schedulingJob
-		err := c.BindJSON(&job)
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers: []string{"localhost:61162"},
+		Topic:   "user.authentications",
+		GroupID: "caching-scheduler",
+	})
+	defer reader.Close()
+
+
+	println("Waiting for messages from user.authentications topic...")
+
+	// Poll for new messages from user.authentications topic
+	for {
+		m, err := reader.ReadMessage(context.Background())
 		if err != nil {
-			c.String(400, "Failed to parse job")
-			return
+			panic(err)
 		}
+
+		var job schedulingJob
+		err = json.Unmarshal(m.Value, &job)
+		if err != nil {
+			panic(err)
+		}
+
+		println("Received scheduling job for publisher", job.Publisher)
 
 		scheduledJobs[job.Publisher] = job
 		if len(scheduledJobs) == 1 {
@@ -50,11 +65,31 @@ func main() {
 			scheduler.StartAsync()
 			scheduler.RunAll()
 		}
+	}
 
-		c.String(200, "Job scheduled")
-	})
+	// TODO for now the scheduler is invoked directly via HTTP.
+	// In the future we will extract this to work via a message queue.
+	// r := gin.Default()
 
-	r.Run(":8083")
+	// r.POST("/schedule", func(c *gin.Context) {
+	// 	var job schedulingJob
+	// 	err := c.BindJSON(&job)
+	// 	if err != nil {
+	// 		c.String(400, "Failed to parse job")
+	// 		return
+	// 	}
+
+	// 	scheduledJobs[job.Publisher] = job
+	// 	if len(scheduledJobs) == 1 {
+	// 		// Won't start if already started
+	// 		scheduler.StartAsync()
+	// 		scheduler.RunAll()
+	// 	}
+
+	// 	c.String(200, "Job scheduled")
+	// })
+
+	// r.Run(":8083")
 }
 
 type MonthData struct {
@@ -117,7 +152,7 @@ func fetchAndCacheSales(job schedulingJob, month MonthData, client *http.Client)
 	// Cache the sales
 	println("Caching sales...")
 
-	cacheUrl := fmt.Sprintf("http://%s/sales/%s/%s", getCachingServiceHost(),job.Publisher, month.Value)
+	cacheUrl := fmt.Sprintf("http://%s/sales/%s/%s", getCachingServiceHost(), job.Publisher, month.Value)
 
 	salesData, _ := json.Marshal(sales)
 	_, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))

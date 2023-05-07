@@ -1,9 +1,7 @@
 package server
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -85,17 +83,7 @@ func Start() {
 func scheduleSalesCaching(c *gin.Context, user *user, token string, logger logger.Logger) {
 	kharmaToken, _ := c.Cookie("kharma_token")
 	kharmaSession, _ := c.Cookie("kharma_session")
-
-	schedulingPayload := fmt.Sprintf(`{
-				"publisher": "%s",
-				"kharmaSession": "%s",
-				"kharmaToken": "%s",
-				"jwt": "%s"
-			}`, user.PublisherId, kharmaSession, kharmaToken, token)
-	_, err := http.Post("http://localhost:8083/schedule", "application/json", bytes.NewReader([]byte(schedulingPayload)))
-	if err != nil {
-		logger.Errorw("Failed to schedule sales fetching", "error", err)
-	}
+	sendUserAuthenticatedMessage(user.PublisherId, kharmaSession, kharmaToken, token)
 }
 
 func (s *server) authenticate(c *gin.Context) (string, string, error) {
