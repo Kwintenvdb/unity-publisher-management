@@ -67,7 +67,20 @@ func Start() {
 		logger.Fatalw("Failed to create auth middleware", "error", err)
 	}
 
-	r.POST("/authenticate", authMiddleware.LoginHandler)
+	r.POST("/authenticate", func(c *gin.Context) {
+		email, publisher, err := server.authenticate(c)
+		if err != nil {
+			c.String(http.StatusUnauthorized, "Failed to authenticate")
+			return
+		}
+		u := user{
+			Email:       email,
+			PublisherId: publisher,
+		}
+		c.JSON(http.StatusOK, u)
+	})
+
+	// r.POST("/authenticate", authMiddleware.LoginHandler)
 
 	auth := r.Group("/api")
 	auth.Use(authMiddleware.MiddlewareFunc())
