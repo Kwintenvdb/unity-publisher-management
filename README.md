@@ -29,3 +29,12 @@ When the JWT expires, or any Unity API returns a 401, the scheduler stops fetchi
 Cache:
 1. Stores all sales data per month by publisher id
 2. On a request to cache new (different) data, sends a message to the notification service to inform the user of new sales
+
+
+## To do's
+
+* Add JWT verification to all services
+* Move authentication to API gateway
+* Convert API gateway to use Gin rather than Fiber
+* Return frontend from API gateway
+* Run on k8s
