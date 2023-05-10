@@ -1,4 +1,4 @@
-package server
+package auth
 
 import (
 	"context"
@@ -15,7 +15,7 @@ type schedulingJob struct {
 	JWT           string `json:"jwt"`
 }
 
-func sendUserAuthenticatedMessage(publisher, session, token, jwt string) {
+func SendUserAuthenticatedMessage(publisher, session, token, jwt string) {
 	w := kafka.Writer{
 		Addr:     kafka.TCP("localhost:61162"),
 		Topic:    "user.authentications",

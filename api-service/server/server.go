@@ -3,12 +3,12 @@ package server
 import (
 	"errors"
 	"net/http"
-	"time"
+	// "time"
 
 	"github.com/Kwintenvdb/unity-publisher-management/api"
 	"github.com/Kwintenvdb/unity-publisher-management/logger"
 
-	jwt "github.com/appleboy/gin-jwt/v2"
+	// jwt "github.com/appleboy/gin-jwt/v2"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,48 +29,12 @@ func Start() {
 
 	r := gin.Default()
 
-	// NOTE: We need to invalidate the token somehow / log out the user
-	// if any of the Unity API endpoints return a 401
-	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
-		Realm:       "unity-publisher-management",
-		Key:         []byte("my temporary private secret key"),
-		Timeout:     time.Hour * 72, // 3 days
-		SendCookie:  true,
-		TokenLookup: "header:Authorization,cookie:jwt",
-		Authenticator: func(c *gin.Context) (interface{}, error) {
-			email, publisher, err := server.authenticate(c)
-			if err != nil {
-				return nil, jwt.ErrFailedAuthentication
-			}
-			user := &user{
-				Email:       email,
-				PublisherId: publisher,
-			}
-			c.Set("user", user)
-			return user, nil
-		},
-		LoginResponse: func(c *gin.Context, code int, token string, expire time.Time) {
-			user := c.MustGet("user").(*user)
 
-			scheduleSalesCaching(c, user, token, logger)
-
-			c.JSON(http.StatusOK, gin.H{
-				"email":       user.Email,
-				"publisherId": user.PublisherId,
-				"token":       token,
-				"expire":      expire.Format(time.RFC3339),
-			})
-		},
-	})
-
-	if err != nil {
-		logger.Fatalw("Failed to create auth middleware", "error", err)
-	}
 
 	r.POST("/authenticate", func(c *gin.Context) {
 		email, publisher, err := server.authenticate(c)
 		if err != nil {
-			c.String(http.StatusUnauthorized, "Failed to authenticate")
+			c.String(http.StatusUnauthorized, err.Error())
 			return
 		}
 		u := user{
@@ -80,23 +44,15 @@ func Start() {
 		c.JSON(http.StatusOK, u)
 	})
 
-	// r.POST("/authenticate", authMiddleware.LoginHandler)
+	api := r.Group("/api")
+	// api.Use(authMiddleware.MiddlewareFunc())
 
-	auth := r.Group("/api")
-	auth.Use(authMiddleware.MiddlewareFunc())
+	api.GET("/sales/:publisher/:month", server.fetchSales)
+	api.GET("/months/:publisher", server.fetchMonths)
+	api.GET("/packages", server.fetchPackages)
 
-	auth.GET("/sales/:publisher/:month", server.fetchSales)
-	auth.GET("/months/:publisher", server.fetchMonths)
-	auth.GET("/packages", server.fetchPackages)
-
-	logger.Info("Starting server on port 8081")
+	// logger.Info("Starting server on port 8081")
 	r.Run(":8081")
-}
-
-func scheduleSalesCaching(c *gin.Context, user *user, token string, logger logger.Logger) {
-	kharmaToken, _ := c.Cookie("kharma_token")
-	kharmaSession, _ := c.Cookie("kharma_session")
-	sendUserAuthenticatedMessage(user.PublisherId, kharmaSession, kharmaToken, token)
 }
 
 func (s *server) authenticate(c *gin.Context) (string, string, error) {
@@ -104,15 +60,13 @@ func (s *server) authenticate(c *gin.Context) (string, string, error) {
 	password := c.PostForm("password")
 
 	if len(email) == 0 || len(password) == 0 {
-		c.String(http.StatusBadRequest, "Missing email or password")
 		return "", "", errors.New("missing email or password")
 	}
 
 	apiClient := api.NewClient(s.logger)
 	authResponse, err := apiClient.Authenticate(email, password)
 	if err != nil {
-		c.String(http.StatusUnauthorized, "Failed to authenticate")
-		return "", "", err
+		return "", "", errors.New("failed to authenticate")
 	}
 
 	c.SetCookie("kharma_token", authResponse.KharmaToken, 0, "", "", false, true)
@@ -131,36 +85,12 @@ func (s *server) fetchSales(c *gin.Context) {
 	publisher := c.Param("publisher")
 	month := c.Param("month")
 
-	// TODO the API service should not check the cache, because the API service is
-	// used to populate the cache...
-	// Instead, the API gateway could check the cache before making a request to the API service.
-	// It is probably still fine for the API service to populate the cache, though likely unnecessary.
-
-	// cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
-	// res, err := http.Get(cacheUrl)
-	// if err == nil && res.StatusCode == http.StatusOK {
-	// 	s.logger.Debug("Retrieved sales from cache")
-	// 	c.DataFromReader(http.StatusOK, res.ContentLength, "application/json", res.Body, nil)
-	// 	return
-	// } else {
-	// 	s.logger.Debug("Sales not found in cache")
-	// }
-
 	apiClient := api.NewClient(s.logger)
 	sales, err := apiClient.FetchSales(publisher, month, token, session)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "Failed to fetch sales")
 		return
 	}
-
-	// Cache the sales
-	// s.logger.Debug("Sales retrieved. Caching sales...")
-	// salesData, _ := json.Marshal(sales)
-	// _, err = http.Post(cacheUrl, "application/json", bytes.NewReader(salesData))
-	// if err != nil {
-	// 	s.logger.Warnw("Failed to cache sales", "error", err)
-	// }
-
 	c.JSON(http.StatusOK, sales)
 }
 

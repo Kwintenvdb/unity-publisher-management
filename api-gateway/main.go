@@ -1,42 +1,46 @@
 package main
 
 import (
+	// "encoding/json"
+	"bytes"
 	"encoding/json"
 	"errors"
-	// "fmt"
 	"io"
 	"strings"
 
-	// "fmt"
-	// "io"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"time"
 
-	// "github.com/gofiber/fiber/v2"
-	// "github.com/gofiber/fiber/v2/middleware/logger"
-	// "github.com/gofiber/fiber/v2/middleware/proxy"
-
 	"github.com/abrander/ginproxy"
 	jwt "github.com/appleboy/gin-jwt/v2"
 	"github.com/gin-gonic/gin"
+
+	"github.com/Kwintenvdb/unity-publisher-management/api-gateway/auth"
 )
-
-// This service will be responsible for periodically caching
-// the data from the Unity Publisher Administation API.
-
-// TODO rename this API-Gateway?
-// API gateway should first check the cache, otherwise the API will be called
 
 type user struct {
 	Email       string
 	PublisherId string
 }
 
+type responseBodyWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (r *responseBodyWriter) Write(b []byte) (int, error) {
+	r.body.Write(b)
+	return r.ResponseWriter.Write(b)
+}
+
 func main() {
 	r := gin.Default()
 
+	// NOTE: We need to invalidate the token somehow / log out the user
+	// if any of the Unity API endpoints return a 401
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
 		Realm:       "unity-publisher-management",
 		Key:         []byte("my temporary private secret key"),
@@ -44,18 +48,42 @@ func main() {
 		SendCookie:  true,
 		TokenLookup: "header:Authorization,cookie:jwt",
 		Authenticator: func(c *gin.Context) (interface{}, error) {
-			url := createApiServiceUrl("/authenticate")
-			res, err := http.Post(url, "application/json", c.Request.Body)
-			if err != nil || res.StatusCode != http.StatusOK {
+			// url := createApiServiceUrl("/authenticate")
+
+			// res, err := http.DefaultClient.Do(c.Request)
+
+			writer := &responseBodyWriter{
+				body:           &bytes.Buffer{},
+				ResponseWriter: c.Writer,
+			}
+			c.Writer = writer
+
+			hostUrl, _ := url.Parse("http://" + getApiServiceHost())
+			p := httputil.NewSingleHostReverseProxy(hostUrl)
+			p.ServeHTTP(c.Writer, c.Request)
+
+			if c.Writer.Status() != http.StatusOK {
 				return nil, jwt.ErrFailedAuthentication
 			}
 
 			var u user
-			err = json.NewDecoder(res.Body).Decode(&u)
+			err := json.NewDecoder(writer.body).Decode(&u)
 			if err != nil {
 				return nil, jwt.ErrFailedAuthentication
 			}
 			return u, nil
+		},
+		LoginResponse: func(c *gin.Context, code int, token string, expire time.Time) {
+			user := c.MustGet("user").(*user)
+
+			scheduleSalesCaching(c, user, token)
+
+			c.JSON(http.StatusOK, gin.H{
+				"email":       user.Email,
+				"publisherId": user.PublisherId,
+				"token":       token,
+				"expire":      expire.Format(time.RFC3339),
+			})
 		},
 	})
 	if err != nil {
@@ -76,6 +104,7 @@ func main() {
 		// Check cache for sales API
 		if strings.HasPrefix(path, "/sales") {
 			println("sales path", path)
+			// Check the caching service first, then forward to API service if not found
 			err := fetchSalesFromCache(path, c)
 			if err == nil {
 				return
@@ -86,79 +115,11 @@ func main() {
 		proxy.Handler(c)
 	})
 
-	// TODO special handling for cached requests
-	// authGroup.GET("/sales/:publisher/:month", func(c *gin.Context) {
-	// 	publisher := c.Param("publisher")
-	// 	month := c.Param("month")
-
-	// 	println("Fetching sales for", publisher, "in", month, "...")
-
-	// 	// Check the caching service first, then forward to API service if not found
-	// 	cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
-	// 	res, err := http.Get(cacheUrl)
-	// 	if err != nil {
-	// 		println("Failed to fetch sales", err)
-	// 	}
-	// 	if res.StatusCode == http.StatusOK {
-	// 		println("Retrieved sales from cache")
-
-	// 		defer res.Body.Close()
-	// 		body, _ := io.ReadAll(res.Body)
-	// 		c.Data(http.StatusOK, "application/json", body)
-	// 		return
-	// 	}
-
-	// 	println("Sales not found in cache, fetching from API service...")
-	// 	// path := c.Request.URL.Path
-	// 	// url := createApiServiceUrl(path)
-	// 	proxy.Handler(c)
-	// })
-
 	r.Run(":8080")
-
-	// app := fiber.New()
-	// app.Post("/authenticate", proxy.Forward(createApiServiceUrl("/authenticate")))
-
-	// app.Get("/api/sales/:publisher/:month", func(c *fiber.Ctx) error {
-	// 	publisher := c.Params("publisher")
-	// 	month := c.Params("month")
-
-	// 	println("Fetching sales for", publisher, "in", month, "...")
-
-	// 	// Check the caching service first, then forward to API service if not found
-	// 	cacheUrl := fmt.Sprintf("http://localhost:8082/sales/%s/%s", publisher, month)
-	// 	res, err := http.Get(cacheUrl)
-	// 	if err != nil {
-	// 		println("Failed to fetch sales", err)
-	// 	}
-	// 	if res.StatusCode == http.StatusOK {
-	// 		println("Retrieved sales from cache")
-
-	// 		defer res.Body.Close()
-	// 		body, _ := io.ReadAll(res.Body)
-	// 		return c.SendString(string(body))
-	// 	}
-
-	// 	println("Sales not found in cache, fetching from API service...")
-	// 	path := c.Path()
-	// 	url := createApiServiceUrl(path)
-	// 	return proxy.Do(c, url)
-	// })
-
-	// app.All("/api/*", func(c *fiber.Ctx) error {
-	// 	path := c.Path()
-	// 	url := createApiServiceUrl(path)
-	// 	return proxy.Do(c, url)
-	// })
-
-	// app.Use(logger.New())
-	// app.Listen(":8080")
 }
 
 func fetchSalesFromCache(path string, c *gin.Context) error {
-	// Check the caching service first, then forward to API service if not found
 	cacheUrl, _ := url.JoinPath("http://localhost:8082", path)
-	// cacheUrl := fmt.Sprintf("http://localhost:8082%s", path)
 	res, err := http.Get(cacheUrl)
 	if err != nil {
 		println("Failed to fetch sales")
@@ -173,6 +134,12 @@ func fetchSalesFromCache(path string, c *gin.Context) error {
 		return nil
 	}
 	return errors.New("sales not found in cache")
+}
+
+func scheduleSalesCaching(c *gin.Context, user *user, token string) {
+	kharmaToken, _ := c.Cookie("kharma_token")
+	kharmaSession, _ := c.Cookie("kharma_session")
+	auth.SendUserAuthenticatedMessage(user.PublisherId, kharmaSession, kharmaToken, token)
 }
 
 func createApiServiceUrl(path string) string {

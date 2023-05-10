@@ -16,5 +16,11 @@
             "request": "launch",
             "program": "${workspaceFolder}/caching-service/main.go",
         },
+        {
+            "name": "Launch api-gateway",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}/api-gateway/main.go",
+        }
     ]
 }
