@@ -29,8 +29,6 @@ func Start() {
 
 	r := gin.Default()
 
-
-
 	r.POST("/authenticate", func(c *gin.Context) {
 		email, publisher, err := server.authenticate(c)
 		if err != nil {
@@ -45,13 +43,10 @@ func Start() {
 	})
 
 	api := r.Group("/api")
-	// api.Use(authMiddleware.MiddlewareFunc())
-
 	api.GET("/sales/:publisher/:month", server.fetchSales)
 	api.GET("/months/:publisher", server.fetchMonths)
 	api.GET("/packages", server.fetchPackages)
 
-	// logger.Info("Starting server on port 8081")
 	r.Run(":8081")
 }
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"time"
@@ -39,6 +38,8 @@ func (r *responseBodyWriter) Write(b []byte) (int, error) {
 func main() {
 	r := gin.Default()
 
+	proxy, _ := ginproxy.NewGinProxy("http://" + getApiServiceHost())
+
 	// NOTE: We need to invalidate the token somehow / log out the user
 	// if any of the Unity API endpoints return a 401
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
@@ -48,19 +49,13 @@ func main() {
 		SendCookie:  true,
 		TokenLookup: "header:Authorization,cookie:jwt",
 		Authenticator: func(c *gin.Context) (interface{}, error) {
-			// url := createApiServiceUrl("/authenticate")
-
-			// res, err := http.DefaultClient.Do(c.Request)
-
 			writer := &responseBodyWriter{
 				body:           &bytes.Buffer{},
 				ResponseWriter: c.Writer,
 			}
 			c.Writer = writer
 
-			hostUrl, _ := url.Parse("http://" + getApiServiceHost())
-			p := httputil.NewSingleHostReverseProxy(hostUrl)
-			p.ServeHTTP(c.Writer, c.Request)
+			proxy.Handler(c)
 
 			if c.Writer.Status() != http.StatusOK {
 				return nil, jwt.ErrFailedAuthentication
@@ -92,7 +87,6 @@ func main() {
 
 	r.POST("/authenticate", authMiddleware.LoginHandler)
 
-	proxy, _ := ginproxy.NewGinProxy("http://" + getApiServiceHost())
 
 	// Automatically proxy all api requests to API service
 	authGroup := r.Group("/api")
@@ -140,10 +134,6 @@ func scheduleSalesCaching(c *gin.Context, user *user, token string) {
 	kharmaToken, _ := c.Cookie("kharma_token")
 	kharmaSession, _ := c.Cookie("kharma_session")
 	auth.SendUserAuthenticatedMessage(user.PublisherId, kharmaSession, kharmaToken, token)
-}
-
-func createApiServiceUrl(path string) string {
-	return "http://" + getApiServiceHost() + path
 }
 
 func getApiServiceHost() string {
